@@ -165,7 +165,9 @@ class Bot(object):
                      update.message['text']).strip()
 
         if not re.match('\d{1,2}:\d\d', msg):
-            raise ValueError('Invalid time format. Please use hh:mm')
+            self._reply(update, 'Invalid time format. Please use '
+                                '<pre>/subscribe hh:mm</pre>')
+            return
 
         subtime = dttime(*map(int, msg.split(':')))
         self._notifier.subscribe_chat(update.effective_chat['id'], subtime)
@@ -246,5 +248,5 @@ class Bot(object):
             self.log.exception(e)
             self._last_error = (datetime.now(), cmd, user, e)
             self._reply(update, 'Error during command execution:\n\n<pre>%s'
-                                '</pre>\n\nPlease take a look at the log '
-                                'files for further information.' % e)
+                                '</pre>\n\nPlease message @kuryfox for an '
+                                'error report!' % e)
