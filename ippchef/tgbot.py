@@ -30,7 +30,7 @@ import os.path
 from datetime import date, datetime, timedelta, time as dttime
 
 from telegram.ext import Updater, CommandHandler
-from telegram import KeyboardButton, ReplyKeyboardMarkup
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from ippchef.xmpp import XMPPConnection
 
@@ -131,6 +131,7 @@ class Bot(object):
         self._create_guarded_cmd('tomorrow', self.cmd_tomorrow)
         self._create_guarded_cmd('subscribe', self.cmd_subscribe)
         self._create_guarded_cmd('unsubscribe', self.cmd_unsubscribe)
+        self._create_guarded_cmd('disable_keyboard', self.cmd_disable_keyboard)
         self._create_guarded_cmd('debug', self.cmd_debug)
 
     def run(self):
@@ -193,6 +194,10 @@ class Bot(object):
                                                      last))
 
         self._reply(update, '\n'.join(result))
+
+    def cmd_disable_keyboard(self, bot, update):
+        self._reply(update, 'Keyboard removed.',
+                    reply_markup=ReplyKeyboardRemove())
 
     def _reformat_menu(self, raw, date):
         menu = ['<b>IPP Menu for %s</b>' % date.strftime('%A %d.%m.%Y'), '']
