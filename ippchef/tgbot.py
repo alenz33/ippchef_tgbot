@@ -239,9 +239,9 @@ class Bot(object):
         self._updater.dispatcher.add_handler(CommandHandler(cmd, func))
 
     def _guard_cmd(self, cmd, func, bot, update):
-        user = update.effective_user['username'] if update.effective_user \
-            else 'Unknown'
-        self.log.debug('Exec command "%s" for "%s" ...', cmd, user)
+        user = update.effective_user
+        self.log.debug('Exec command "%s" for %s (%s) ...', cmd, user.id,
+                       user.name)
         try:
             return func(bot, update)
         except Exception as e:
