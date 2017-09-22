@@ -44,7 +44,7 @@ Commands:
     - /subscribe hh:mm
     - /unsubscribe
 
-Inquiries about the bot at @kuryfox.
+Inquiries about the bot to: @kuryfox.
 
 '''
 
