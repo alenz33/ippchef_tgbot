@@ -1,0 +1,92 @@
+#!/usr/bin/env python2
+#  -*- coding: utf-8 -*-
+# *****************************************************************************
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# Module authors:
+#   Alexander Lenz <fslenz@gmail.com>
+#
+# *****************************************************************************
+
+import sys
+import os
+import argparse
+
+from os import path
+
+import mlzlog
+
+# Add import path for inplace usage
+sys.path.insert(0, path.abspath(path.join(path.dirname(__file__), '..')))
+
+from ippchef.tgbot import Bot
+
+
+def parseArgv(argv):
+    '''
+    Parse command line arguments.
+    '''
+    parser = argparse.ArgumentParser(
+        description='IPP chef TG bot',
+        conflict_handler='resolve')
+
+    parser.add_argument(
+        '-v',
+        '--verbose',
+        action='store_true',
+        help='Verbose logging',
+        default=False)
+    parser.add_argument(
+        '--jid',
+        help='Own jabber id',
+        type=str,
+        default=os.getenv('JID'))
+    parser.add_argument(
+        '--jpw',
+        help='Jabber password',
+        type=str,
+        default=os.getenv('JPW'))
+    parser.add_argument(
+        '--djid',
+        help='Destination jabber id',
+        type=str,
+        default=os.getenv('DJID'))
+    parser.add_argument(
+        '--api-key',
+        help='Telegram API key',
+        type=str,
+        default=os.getenv('TG_API_KEY'))
+
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
+
+    args = parseArgv(argv[1:])
+
+    loglevel = 'debug' if args.verbose else 'info'
+    mlzlog.initLogging('ippchef', loglevel, 'log')
+
+    bot = Bot(mlzlog.log, args.api_key, args.jid, args.jpw, args.djid)
+    bot.run()
+
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
