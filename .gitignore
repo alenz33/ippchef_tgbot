@@ -109,3 +109,6 @@ log
 
 # internal
 start.sh
+
+# data
+*.pickle

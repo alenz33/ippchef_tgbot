@@ -24,6 +24,8 @@ import time
 import re
 import functools
 import threading
+import pickle
+import os.path
 
 from datetime import date, datetime, timedelta, time as dttime
 
@@ -46,36 +48,56 @@ Inquiries about the bot at @kuryfox.
 
 
 class NotificationLoop(threading.Thread):
-    def __init__(self, log, bot, loop_delay=15):
+    def __init__(self, log, bot, loop_delay=15,
+                 subscription_file='subscriptions.pickle'):
         threading.Thread.__init__(self)
         self.log = log.getChild('notifier')
         self._bot = bot
         self._loop_delay = loop_delay
         self._sub_chats = {}
+        self._subscription_file = subscription_file
+        self.restore()
 
     @property
     def subscriptions(self):
         return self._sub_chats
+
+    def save(self):
+        with open(self._subscription_file, 'w') as f:
+            pickle.dump(self._sub_chats, f)
+
+    def restore(self):
+        if not os.path.isfile(self._subscription_file):
+            return
+        with open(self._subscription_file, 'r') as f:
+            self._sub_chats = pickle.load(f)
 
     def subscribe_chat(self, chat, timeobj):
         self.unsubscribe_chat(chat)
 
         self._sub_chats[chat] = (timeobj, None)
 
+        self.save()
+
     def unsubscribe_chat(self, chat):
         if chat in self._sub_chats:
             del self._sub_chats[chat]
+
+        self.save()
 
     def run(self):
         self.log.info('Start notification loop')
         while True:
             try:
                 today = date.today()
-                now = datetime.now().time()
-                for chat, (ntime, last) in self._sub_chats.items():
-                    if (not last or last < today) and ntime < now:
-                        self._notify(chat)
-                        self._sub_chats[chat] = (ntime, today)
+
+                if today.weekday() <= 4:
+                    now = datetime.now().time()
+                    for chat, (ntime, last) in self._sub_chats.items():
+                        if (not last or last < today) and ntime < now:
+                            self._notify(chat)
+                            self._sub_chats[chat] = (ntime, today)
+                    self.save()
             except Exception as e:
                 self.log.exception(e)
             time.sleep(self._loop_delay)
@@ -98,6 +120,8 @@ class Bot(object):
 
         self._xmpp = XMPPConnection(log, jid, jpw, djid)
         self._xmpp.start()
+
+        time.sleep(2)
 
         self._notifier = NotificationLoop(self.log, self)
         self._notifier.start()
@@ -146,7 +170,7 @@ class Bot(object):
         self._reply(update, 'Subscription successful!')
 
     def cmd_unsubscribe(self, bot, update):
-        self._notifier._unsubscribe_chat(update.effective_chat['id'])
+        self._notifier.unsubscribe_chat(update.effective_chat['id'])
         self._reply(update, 'Unsubscription successful!')
 
     def cmd_debug(self, bot, update):
