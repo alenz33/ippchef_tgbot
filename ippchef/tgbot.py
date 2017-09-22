@@ -41,6 +41,8 @@ IPP cantine menu bot.
 Commands:
     - /today
     - /tomorrow
+    - /subscribe hh:mm
+    - /unsubscribe
 
 Inquiries about the bot at @kuryfox.
 
