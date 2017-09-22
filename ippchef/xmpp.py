@@ -43,6 +43,9 @@ class XMPPConnection(sleekxmpp.ClientXMPP, threading.Thread):
         self.add_event_handler('message', self.handle_message)
 
     def communicate(self, msg, timeout=3.0):
+        if not self.is_alive():
+            raise RuntimeError('Internal xmpp connection is currently offline')
+
         self.log.debug('Send message to %s: %s' % (self._djid, msg))
         self.send_presence(pto=self._djid)
         self.send_message(mto=self._djid, mbody=msg, mtype='chat')
@@ -72,8 +75,17 @@ class XMPPConnection(sleekxmpp.ClientXMPP, threading.Thread):
         self.get_roster()
 
     def run(self):
-        self.log.info('Connect ...')
-        self.connect()
+        while True:
+            for i in range(10):
+                try:
+                    self.log.info('Connect ...')
+                    self.connect()
 
-        self.log.info('Blocking now ...')
-        self.process(block=True)
+                    self.log.info('Blocking now ...')
+                    self.process(block=True)
+                except Exception as e:
+                    self.log.exception(e)
+                    self.disconnect()
+                    time.sleep(3.0)
+                    self.log.info('Reestablish connection')
+            time.sleep(600.0)
