@@ -22,7 +22,6 @@
 
 import time
 import re
-import functools
 import threading
 import pickle
 import os.path
@@ -33,6 +32,7 @@ from telegram.ext import Updater, CommandHandler
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from ippchef.xmpp import XMPPConnection
+from ippchef.util import tg_reply, check_admin_rights
 
 
 WELCOME_MSG = '''
@@ -43,6 +43,7 @@ Commands:
     - /tomorrow - Show tomorrow's menu
     - /subscribe hh:mm - Subscribe to daily notifications
     - /unsubscribe - Unsubscribe from daily notifications
+    - /show_subscription - Show your subscription
 
     - /disable_keyboard - If you don't like keyboards
 
@@ -50,8 +51,32 @@ Inquiries about the bot to: @kuryfox.
 
 
 <b>PLEASE NOTE: THIS BOT IS CURRENTLY WORK IN PROGRESS AND __NOT__ STABLE YET</b>
-
 '''
+
+
+ADMIN_USERS = ['@kuryfox', '@farrowstrange']
+
+
+class GuardedCommandHandler(CommandHandler):
+    def __init__(self, log, command, callback, needs_admin=False):
+        CommandHandler.__init__(self, command, callback)
+        self.log = log.getChild(command)
+        self._needs_admin = needs_admin
+
+    def handle_update(self, update, dispatcher):
+        user = update.effective_user
+        self.log.debug('Exec command for %s (%s) ...', user.id, user.name)
+
+        try:
+            if self._needs_admin:
+                check_admin_rights(update.effective_user.name.lower())
+
+            return CommandHandler.handle_update(self, update, dispatcher)
+        except Exception as e:
+            self.log.exception(e)
+            tg_reply(update,'Error during command execution:\n\n<pre>%s</pre>'
+                            '\n\nPlease message @kuryfox for an error report!'
+                     % e, self.log)
 
 
 class NotificationLoop(threading.Thread):
@@ -95,6 +120,9 @@ class NotificationLoop(threading.Thread):
 
         self.save()
 
+    def get_chat_subscription(self, chat):
+        return self._sub_chats.get(chat, None)
+
     def run(self):
         self.log.info('Start notification loop')
         while True:
@@ -119,27 +147,25 @@ class NotificationLoop(threading.Thread):
 
 
 class Bot(object):
-    ADMIN_USERS = ['@kuryfox', '@farrowstrange']
-
     def __init__(self, log, api_key, jid, jpw, djid):
         self.log = log
         self._sub_chats = {}
         self._cache = (None, {})
-        self._last_error = None
 
         self._updater = Updater(api_key)
         self._bot = self._updater.bot
         self._xmpp = XMPPConnection(log, jid, jpw, djid)
         self._notifier = NotificationLoop(self.log, self)
 
-        self._create_guarded_cmd('start', self.cmd_start)
-        self._create_guarded_cmd('today', self.cmd_today)
-        self._create_guarded_cmd('tomorrow', self.cmd_tomorrow)
-        self._create_guarded_cmd('subscribe', self.cmd_subscribe)
-        self._create_guarded_cmd('unsubscribe', self.cmd_unsubscribe)
-        self._create_guarded_cmd('disable_keyboard', self.cmd_disable_keyboard)
-        self._create_guarded_cmd('debug', self.cmd_debug, True)
-        self._create_guarded_cmd('refresh_cache', self.cmd_refresh_cache, True)
+        self._create_command('start', self.cmd_start)
+        self._create_command('today', self.cmd_today)
+        self._create_command('tomorrow', self.cmd_tomorrow)
+        self._create_command('subscribe', self.cmd_subscribe)
+        self._create_command('unsubscribe', self.cmd_unsubscribe)
+        self._create_command('show_subscription', self.cmd_show_subscription)
+        self._create_command('disable_keyboard', self.cmd_disable_keyboard)
+        self._create_command('debug', self.cmd_debug, True)
+        self._create_command('refresh_cache', self.cmd_refresh_cache, True)
 
     def run(self):
         self._xmpp.start()
@@ -163,7 +189,7 @@ class Bot(object):
 
         markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-        self._reply(update, WELCOME_MSG, reply_markup=markup)
+        self._reply(update, WELCOME_MSG, self.log, reply_markup=markup)
 
     def cmd_today(self, bot, update):
         self._update_cache()
@@ -191,20 +217,21 @@ class Bot(object):
         self._notifier.unsubscribe_chat(update.effective_chat['id'])
         self._reply(update, 'Unsubscription successful!')
 
+    def cmd_show_subscription(self, bot, update):
+        sub = self._notifier.get_chat_subscription(update.effective_chat['id'])
+
+        if sub is None:
+            self._reply(update, 'You didn\'t subscribe yet. Use '
+                        '<pre>/subscribe hh:mm</pre> to subscribe.)')
+        else:
+            self._reply(update, '<b>Active subscription:</b> %s (last notification: '
+                                '%s)'
+                        % (sub[0], sub[1]))
+
     def cmd_debug(self, bot, update):
         result = ['<b>DEBUG INFO</b>', '']
 
-        result.append('<b>Last error:</b>')
-        if self._last_error is None:
-            result.append('Nothing happened! Yay!')
-        else:
-            dt, cmd, user, error = self._last_error
-            result.append('%s:\n<i>%s</i> for <i>%s</i>:\n<pre>%s</pre>'
-                          % (dt.ctime(), cmd, user, error))
-
-        result.append('')
         result.append('<b>Subscriptions:</b>')
-
         for chat, (subtime, last) in self._notifier.subscriptions.items():
             result.append('  - %s: %s (last: %s)' % (chat,
                                                      subtime.isoformat(),
@@ -245,33 +272,13 @@ class Bot(object):
                     today + timedelta(days=1))
             })
 
-    def _reply(self, update, reply, **kwargs):
-        update.message.reply_text(reply, parse_mode='HTML', **kwargs)
-
     def _send(self, chat, msg):
         self.log.debug('Send message to %s: %s', chat, msg)
         self._bot.sendMessage(chat, msg, parse_mode='HTML')
 
-    def _check_admin_rights(self, update):
-        if update.effective_user.name.lower() not in self.ADMIN_USERS:
-            raise RuntimeError('Admin rights required!')
+    def _reply(self, update, message, **kwargs):
+        tg_reply(update, message, self.log, **kwargs)
 
-    def _create_guarded_cmd(self, cmd, func, admin=False):
-        func = functools.partial(self._guard_cmd, cmd, func, admin)
-        self._updater.dispatcher.add_handler(CommandHandler(cmd, func))
-
-    def _guard_cmd(self, cmd, func, admin, bot, update):
-        user = update.effective_user
-        self.log.debug('Exec command "%s" for %s (%s) ...', cmd, user.id,
-                       user.name)
-        try:
-            if admin:
-                self._check_admin_rights(update)
-
-            return func(bot, update)
-        except Exception as e:
-            self.log.exception(e)
-            self._last_error = (datetime.now(), cmd, user, e)
-            self._reply(update, 'Error during command execution:\n\n<pre>%s'
-                                '</pre>\n\nPlease message @kuryfox for an '
-                                'error report!' % e)
+    def _create_command(self, cmd, func, admin=False):
+        self._updater.dispatcher.add_handler(
+            GuardedCommandHandler(self.log, cmd, func, admin))
