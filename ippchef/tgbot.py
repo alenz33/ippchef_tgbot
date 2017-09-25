@@ -39,10 +39,12 @@ WELCOME_MSG = '''
 IPP cantine menu bot.
 
 Commands:
-    - /today
-    - /tomorrow
-    - /subscribe hh:mm
-    - /unsubscribe
+    - /today - Show today's menu
+    - /tomorrow - Show tomorrow's menu
+    - /subscribe hh:mm - Subscribe to daily notifications
+    - /unsubscribe - Unsubscribe from daily notifications
+
+    - /disable_keyboard - If you don't like keyboards
 
 Inquiries about the bot to: @kuryfox.
 
