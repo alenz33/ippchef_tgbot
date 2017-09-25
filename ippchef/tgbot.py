@@ -63,7 +63,10 @@ class GuardedCommandHandler(CommandHandler):
         self.log = log.getChild(command)
         self._needs_admin = needs_admin
 
+        self.usage_counter = 0
+
     def handle_update(self, update, dispatcher):
+        self.usage_counter += 1
         user = update.effective_user
         self.log.debug('Exec command for %s (%s) ...', user.id, user.name)
 
@@ -236,6 +239,18 @@ class Bot(object):
             result.append('  - %s: %s (last: %s)' % (chat,
                                                      subtime.isoformat(),
                                                      last))
+
+        handlers = [
+            handler
+            for handlers in self._updater.dispatcher.handlers.values()
+            for handler in handlers if isinstance(handler,GuardedCommandHandler)
+        ]
+
+        result.append('')
+        result.append('<b>Usage counters:</b>')
+
+        for entry in handlers:
+            result.append('  - %s: %i' % (entry.command[0], entry.usage_counter))
 
         self._reply(update, '\n'.join(result))
 
