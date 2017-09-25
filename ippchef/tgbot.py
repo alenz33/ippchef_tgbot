@@ -192,7 +192,7 @@ class Bot(object):
 
         markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-        self._reply(update, WELCOME_MSG, self.log, reply_markup=markup)
+        self._reply(update, WELCOME_MSG, reply_markup=markup)
 
     def cmd_today(self, bot, update):
         self._update_cache()
