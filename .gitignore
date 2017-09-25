@@ -106,6 +106,7 @@ venv.bak/
 
 # inplace
 log
+pid
 
 # internal
 start.sh

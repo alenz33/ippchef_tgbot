@@ -46,6 +46,9 @@ Commands:
 
 Inquiries about the bot to: @kuryfox.
 
+
+<b>PLEASE NOTE: THIS BOT IS CURRENTLY WORK IN PROGRESS AND __NOT__ STABLE YET</b>
+
 '''
 
 
@@ -58,6 +61,7 @@ class NotificationLoop(threading.Thread):
         self._loop_delay = loop_delay
         self._sub_chats = {}
         self._subscription_file = subscription_file
+        self._file_lock = threading.Lock()
         self.restore()
 
     @property
@@ -65,14 +69,16 @@ class NotificationLoop(threading.Thread):
         return self._sub_chats
 
     def save(self):
-        with open(self._subscription_file, 'w') as f:
-            pickle.dump(self._sub_chats, f)
+        with self._file_lock:
+            with open(self._subscription_file, 'w') as f:
+                pickle.dump(self._sub_chats, f)
 
     def restore(self):
-        if not os.path.isfile(self._subscription_file):
-            return
-        with open(self._subscription_file, 'r') as f:
-            self._sub_chats = pickle.load(f)
+        with self._file_lock:
+            if not os.path.isfile(self._subscription_file):
+                return
+            with open(self._subscription_file, 'r') as f:
+                self._sub_chats = pickle.load(f)
 
     def subscribe_chat(self, chat, timeobj):
         self.unsubscribe_chat(chat)
@@ -111,6 +117,8 @@ class NotificationLoop(threading.Thread):
 
 
 class Bot(object):
+    ADMIN_USERS = ['@kuryfox', '@farrowstrange']
+
     def __init__(self, log, api_key, jid, jpw, djid):
         self.log = log
         self._sub_chats = {}
@@ -119,14 +127,8 @@ class Bot(object):
 
         self._updater = Updater(api_key)
         self._bot = self._updater.bot
-
         self._xmpp = XMPPConnection(log, jid, jpw, djid)
-        self._xmpp.start()
-
-        time.sleep(2)
-
         self._notifier = NotificationLoop(self.log, self)
-        self._notifier.start()
 
         self._create_guarded_cmd('start', self.cmd_start)
         self._create_guarded_cmd('today', self.cmd_today)
@@ -134,9 +136,18 @@ class Bot(object):
         self._create_guarded_cmd('subscribe', self.cmd_subscribe)
         self._create_guarded_cmd('unsubscribe', self.cmd_unsubscribe)
         self._create_guarded_cmd('disable_keyboard', self.cmd_disable_keyboard)
-        self._create_guarded_cmd('debug', self.cmd_debug)
+        self._create_guarded_cmd('debug', self.cmd_debug, True)
+        self._create_guarded_cmd('refresh_cache', self.cmd_refresh_cache, True)
 
     def run(self):
+        self._xmpp.start()
+        self.log.debug('Wait for the xmpp connection to get ready ...')
+        time.sleep(3.0)
+        self._update_cache()
+
+        self._notifier.start()
+
+        self.log.info('Enter telegram bot loop')
         self._updater.start_polling()
         self._updater.idle()
 
@@ -199,6 +210,11 @@ class Bot(object):
 
         self._reply(update, '\n'.join(result))
 
+    def cmd_refresh_cache(self, bot, update):
+        self._cache = (None, None)
+        self._update_cache()
+        self._reply(update, 'Done')
+
     def cmd_disable_keyboard(self, bot, update):
         self._reply(update, 'Keyboard removed.',
                     reply_markup=ReplyKeyboardRemove())
@@ -234,15 +250,22 @@ class Bot(object):
         self.log.debug('Send message to %s: %s', chat, msg)
         self._bot.sendMessage(chat, msg, parse_mode='HTML')
 
-    def _create_guarded_cmd(self, cmd, func):
-        func = functools.partial(self._guard_cmd, cmd, func)
+    def _check_admin_rights(self, update):
+        if update.effective_user.name.lower() not in self.ADMIN_USERS:
+            raise RuntimeError('Admin rights required!')
+
+    def _create_guarded_cmd(self, cmd, func, admin=False):
+        func = functools.partial(self._guard_cmd, cmd, func, admin)
         self._updater.dispatcher.add_handler(CommandHandler(cmd, func))
 
-    def _guard_cmd(self, cmd, func, bot, update):
+    def _guard_cmd(self, cmd, func, admin, bot, update):
         user = update.effective_user
         self.log.debug('Exec command "%s" for %s (%s) ...', cmd, user.id,
                        user.name)
         try:
+            if admin:
+                self._check_admin_rights(update)
+
             return func(bot, update)
         except Exception as e:
             self.log.exception(e)

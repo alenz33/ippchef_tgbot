@@ -24,8 +24,16 @@
 import sys
 import os
 import argparse
+import pwd
+import grp
 
 from os import path
+
+import daemon
+try:
+    import daemon.pidlockfile as pidlockfile
+except ImportError:
+    import daemon.pidfile as pidlockfile
 
 import mlzlog
 
@@ -49,6 +57,42 @@ def parseArgv(argv):
         action='store_true',
         help='Verbose logging',
         default=False)
+    parser.add_argument(
+        '-d',
+        '--daemonize',
+        action='store_true',
+        help='Daemonize process',
+        default=False)
+    parser.add_argument(
+        '-w',
+        '--working-directory',
+        type=str,
+        help='Working directory for daemon',
+        default=os.getcwd())
+    parser.add_argument(
+        '-p',
+        '--pid-file',
+        type=str,
+        help='Used pid file',
+        default='/var/run/ippchef.pid')
+    parser.add_argument(
+        '-l',
+        '--log-dir',
+        type=str,
+        help='Used pid file',
+        default='/var/log')
+    parser.add_argument(
+        '-u',
+        '--user',
+        type=str,
+        help='User for daemon',
+        default=os.getlogin())
+    parser.add_argument(
+        '-g',
+        '--group',
+        type=str,
+        help='Group for daemon',
+        default=grp.getgrgid(os.getgid()).gr_name)
     parser.add_argument(
         '--jid',
         help='Own jabber id',
@@ -80,10 +124,34 @@ def main(argv=None):
     args = parseArgv(argv[1:])
 
     loglevel = 'debug' if args.verbose else 'info'
-    mlzlog.initLogging('ippchef', loglevel, 'log')
+    mlzlog.initLogging('ippchef', loglevel, args.log_dir)
 
-    bot = Bot(mlzlog.log, args.api_key, args.jid, args.jpw, args.djid)
-    bot.run()
+    if args.daemonize:
+        uid = pwd.getpwnam(args.user).pw_uid
+        gid = grp.getgrnam(args.group).gr_gid
+
+        if not os.path.isdir(os.path.dirname(args.pid_file)):
+            os.makedirs(os.path.dirname(args.pid_file))
+        pidfile = pidlockfile.TimeoutPIDLockFile(args.pid_file, 3)
+
+        mlzlog.log.info('Daemonizing as %s:%s (%s:%s) ...'
+                        % (args.user, args.group, uid, gid))
+
+        with daemon.DaemonContext(files_preserve=mlzlog.log.getLogfileStreams(),
+                                  working_directory=args.working_directory,
+                                  pidfile=pidfile,
+                                  uid=uid,
+                                  gid=gid):
+            try:
+                mlzlog.log.info('Daemonized successfully')
+                bot = Bot(mlzlog.log, args.api_key, args.jid, args.jpw, args.djid)
+                bot.run()
+            except Exception as e:
+                with open('/tmp/tmplog.log', 'w') as f:
+                    f.write(str(e))
+    else:
+        bot = Bot(mlzlog.log, args.api_key, args.jid, args.jpw, args.djid)
+        bot.run()
 
     return 0
 
