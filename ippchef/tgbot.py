@@ -46,8 +46,12 @@ Commands:
     - /show_subscription - Show your subscription
 
     - /disable_keyboard - If you don't like keyboards
+    - /help - Print this message
 
 Inquiries about the bot to: @kuryfox.
+
+IPP Ultras sticker pack: https://t.me/addstickers/ipp_ultras
+Bot source code: https://github.com/alenz33/ippchef_tgbot
 
 
 <b>PLEASE NOTE: THIS BOT IS CURRENTLY WORK IN PROGRESS AND __NOT__ STABLE YET</b>
@@ -167,6 +171,7 @@ class Bot(object):
         self._create_command('unsubscribe', self.cmd_unsubscribe)
         self._create_command('show_subscription', self.cmd_show_subscription)
         self._create_command('disable_keyboard', self.cmd_disable_keyboard)
+        self._create_command('help', self.cmd_help)
         self._create_command('debug', self.cmd_debug, True)
         self._create_command('refresh_cache', self.cmd_refresh_cache, True)
 
@@ -253,6 +258,9 @@ class Bot(object):
             result.append('  - %s: %i' % (entry.command[0], entry.usage_counter))
 
         self._reply(update, '\n'.join(result))
+
+    def cmd_help(self, bot, update):
+        self._reply(update, WELCOME_MSG)
 
     def cmd_refresh_cache(self, bot, update):
         self._cache = (None, None)
